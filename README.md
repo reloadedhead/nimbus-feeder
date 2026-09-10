@@ -15,6 +15,15 @@ So this skips that layer entirely. It reads the raw HID reports straight off
 `/dev/hidraw`, decodes them by hand, and writes a clean virtual Xbox 360
 controller through `uinput`. No config, no mapping editor, one script.
 
+On Omarchy it also ships a bar-widget: click the icon to arm/disarm, and it
+shows live status.
+
+<p>
+  <img src="docs/popup-off.png" alt="Nimbus bar widget, off" height="140">
+  <img src="docs/popup-waiting.png" alt="Nimbus bar widget, armed and waiting for the controller" height="140">
+  <img src="docs/popup-connected.png" alt="Nimbus bar widget, connected" height="140">
+</p>
+
 ## Why
 
 Years ago [MFIGamepadFeeder](https://github.com/Axadiw/MFIGamepadFeeder) by
