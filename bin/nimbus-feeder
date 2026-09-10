@@ -187,7 +187,11 @@ def main():
         while True:
             path = find_hidraw()
             if path:
-                bridge_once(path)
+                try:
+                    bridge_once(path)
+                except PermissionError as e:
+                    print(f"ERROR: Permission denied opening {e.filename}", flush=True)
+                    return
             else:
                 time.sleep(1)
     except (Stop, KeyboardInterrupt):

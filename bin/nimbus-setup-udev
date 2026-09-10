@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Root-only setup: installs the hidraw udev rule and adds a user to the
+# input group, so nimbus-feeder can run without root afterward. Meant to be
+# invoked via sudo (omarchy/install.sh) or pkexec (the bar-widget's "Fix
+# permissions" button), never run directly as a regular user.
+set -euo pipefail
+
+if [ "$#" -ne 2 ]; then
+    echo "usage: nimbus-setup-udev <path-to-udev-rule> <username>" >&2
+    exit 1
+fi
+
+RULE_SRC="$1"
+TARGET_USER="$2"
+
+install -m 0644 "$RULE_SRC" /etc/udev/rules.d/99-nimbus.rules
+udevadm control --reload-rules
+usermod -aG input "$TARGET_USER"

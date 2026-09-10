@@ -9,17 +9,32 @@ Panel {
   moduleName: "reloadedhead.nimbus"
 
   readonly property string binaryPath: Quickshell.env("HOME") + "/.local/bin/nimbus-feeder"
+  readonly property string pluginRoot: Quickshell.env("HOME") + "/.config/omarchy/plugins/reloadedhead.nimbus"
+  readonly property string setupScript: pluginRoot + "/bin/nimbus-setup-udev"
+  readonly property string udevRulePath: pluginRoot + "/udev/99-nimbus.rules"
+
   property bool armed: false
   property bool bridged: false
   property string errorText: ""
+  property bool fixApplied: false
+
+  readonly property bool permissionError: errorText.indexOf("Permission denied") !== -1
 
   readonly property string statusText: {
-    if (errorText !== "") return errorText
+    if (fixApplied) return "Reboot pending"
+    if (permissionError) return "Missing permissions"
+    if (errorText !== "") return "Error"
     if (!armed) return "Off"
     return bridged ? "Connected" : "Waiting for controller"
   }
 
   function toggleArmed() { armed = !armed }
+
+  function fixPermissions() {
+    if (fixProcess.running) return
+    fixApplied = false
+    fixProcess.running = true
+  }
 
   visible: true
   implicitWidth: button.implicitWidth
@@ -31,18 +46,41 @@ Panel {
     command: [root.binaryPath]
     stdout: SplitParser {
       onRead: function(line) {
-        if (line === "ACTIVE") { root.bridged = true; root.errorText = "" }
-        else if (line === "WAITING") root.bridged = false
+        if (line === "ACTIVE") { root.bridged = true; root.errorText = ""; root.fixApplied = false }
+        else if (line === "WAITING") { root.bridged = false; root.fixApplied = false }
+        else if (line.indexOf("ERROR: ") === 0) root.errorText = line.slice(7)
       }
     }
     stderr: StdioCollector {
       waitForEnd: true
-      onStreamFinished: root.errorText = String(text || "").trim()
+      onStreamFinished: {
+        var t = String(text || "").trim()
+        if (t !== "") root.errorText = t
+      }
     }
     onExited: function(exitCode) {
       root.armed = false
       root.bridged = false
       if (exitCode !== 0 && root.errorText === "") root.errorText = "nimbus-feeder exited unexpectedly"
+    }
+  }
+
+  Process {
+    id: fixProcess
+    running: false
+    property string _stderr: ""
+    command: ["pkexec", root.setupScript, root.udevRulePath, Quickshell.env("USER") || Quickshell.env("LOGNAME")]
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: fixProcess._stderr = String(text || "").trim()
+    }
+    onExited: function(exitCode) {
+      if (exitCode === 0) {
+        root.fixApplied = true
+        root.errorText = ""
+      } else {
+        root.errorText = fixProcess._stderr || "Fix permissions failed"
+      }
     }
   }
 
@@ -95,6 +133,8 @@ Panel {
           trailingControl: Component {
             ToggleSwitch {
               checked: root.armed
+              interactive: !root.permissionError
+              opacity: root.permissionError ? 0.5 : 1.0
               foreground: hero.foreground
               onToggled: root.toggleArmed()
             }
@@ -119,10 +159,46 @@ Panel {
 
         Text {
           textFormat: Text.PlainText
-          visible: root.errorText !== ""
+          visible: root.errorText !== "" && !root.permissionError
           width: parent.width
           text: root.errorText
           color: Color.urgent
+          wrapMode: Text.WordWrap
+          font.family: root.bar.fontFamily
+          font.pixelSize: Style.font.bodySmall
+        }
+
+        Column {
+          visible: root.permissionError
+          width: parent.width
+          spacing: Style.space(8)
+
+          Text {
+            textFormat: Text.PlainText
+            width: parent.width
+            text: "Nimbus needs one-time permission setup to read the controller without root."
+            color: Color.urgent
+            wrapMode: Text.WordWrap
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+
+          Button {
+            text: fixProcess.running ? "Requesting permission…" : "Fix permissions"
+            enabled: !fixProcess.running
+            bordered: true
+            foreground: root.bar.foreground
+            fontFamily: root.bar.fontFamily
+            onClicked: root.fixPermissions()
+          }
+        }
+
+        Text {
+          textFormat: Text.PlainText
+          visible: root.fixApplied
+          width: parent.width
+          text: "Permissions fixed. Reboot for it to take effect, then arm again."
+          color: Qt.darker(root.bar.foreground, 1.5)
           wrapMode: Text.WordWrap
           font.family: root.bar.fontFamily
           font.pixelSize: Style.font.bodySmall

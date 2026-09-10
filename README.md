@@ -47,6 +47,11 @@ live status, and get told if something's wrong). The udev rule needs a
 **reboot** to take effect — a relogin isn't enough, since your desktop
 session's group membership only refreshes on a fresh login.
 
+Installed the plugin some other way (e.g. the Omarchy plugin marketplace,
+which just `git clone`s the repo and skips `install.sh` entirely)? Arming it
+without the udev rule in place shows "Missing permissions" with a "Fix
+permissions" button — click it, authenticate, then reboot.
+
 Not on Omarchy? Just:
 
 ```
