@@ -28,8 +28,15 @@ the part that makes the controller work.
 ```
 git clone <this repo>
 cd nimbus-feeder
-./omarchy/install.sh   # if you're on Omarchy: installs the script + adds a menu entry
+./omarchy/install.sh
 ```
+
+On Omarchy this installs the script to `~/.local/bin`, adds a udev rule so
+your user can read the Nimbus's `hidraw` node without root, and installs a
+bar-widget plugin (a gamepad icon; click it to arm/disarm the bridge, see
+live status, and get told if something's wrong). The udev rule needs a
+**reboot** to take effect — a relogin isn't enough, since your desktop
+session's group membership only refreshes on a fresh login.
 
 Not on Omarchy? Just:
 
@@ -38,21 +45,23 @@ cp nimbus-feeder ~/.local/bin/
 chmod +x ~/.local/bin/nimbus-feeder
 ```
 
+You'll need your own way to let your user read `/dev/hidraw*` (root-only by
+default) — either adapt `udev/99-nimbus.rules`, or just run it with `sudo`.
+
 ## Run
 
-Pair the Nimbus over Bluetooth first, then:
+Pair the Nimbus over Bluetooth first, then either click the bar-widget icon
+to arm it, or run it directly:
 
 ```
-sudo nimbus-feeder
+nimbus-feeder
 ```
 
-Needs root because `/dev/hidraw*` is root-only by default. Everything else
-(`/dev/uinput`) your user can already touch on a normal desktop session.
-Ctrl+C to stop, it tears the virtual controller down cleanly.
-
-On Omarchy, it's in the app menu as "Nimbus Gamepad Feeder" instead. Opens a
-terminal, asks for your password, shows a live readout of every input while
-it runs.
+(`sudo nimbus-feeder` if you skipped the udev rule.) It loops forever,
+printing `WAITING` while no controller is connected and `ACTIVE` once it's
+bridged — reconnect the Nimbus as many times as you like without restarting
+it. Ctrl+C (or SIGTERM) stops it and tears the virtual controller down
+cleanly.
 
 ## What doesn't work
 
