@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "reloadedhead.nimbus",
+  "name": "Nimbus Gamepad",
+  "version": "1.0.0",
+  "author": "reloadedhead",
+  "license": "MIT",
+  "description": "Arm/disarm the SteelSeries Nimbus HID-to-uinput bridge from the bar.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Nimbus Gamepad",
+    "description": "Click to arm/disarm the Nimbus bridge. Icon dims when off, lights up once the controller connects.",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

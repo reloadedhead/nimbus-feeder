@@ -1,0 +1,5 @@
+# Grants the logged-in user access to the Nimbus's hidraw node without root.
+# KERNELS matches the HID core's bus:vendor:product id (0005 = Bluetooth,
+# 0111:1420 = SteelSeries Nimbus), which stays stable across reconnects even
+# though the trailing instance suffix after the dot changes each time.
+SUBSYSTEM=="hidraw", KERNELS=="0005:0111:1420.*", MODE="0660", GROUP="input", TAG+="uaccess"

@@ -2,38 +2,26 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MENU_FILE="$HOME/.config/omarchy/extensions/omarchy-menu.jsonc"
+PLUGIN_DIR="$HOME/.config/omarchy/plugins/reloadedhead.nimbus"
+UDEV_RULE="/etc/udev/rules.d/99-nimbus.rules"
 
 mkdir -p "$HOME/.local/bin"
 cp "$REPO_DIR/nimbus-feeder" "$HOME/.local/bin/nimbus-feeder"
 chmod +x "$HOME/.local/bin/nimbus-feeder"
 echo "installed ~/.local/bin/nimbus-feeder"
 
-mkdir -p "$(dirname "$MENU_FILE")"
-touch "$MENU_FILE"
+mkdir -p "$PLUGIN_DIR"
+cp "$REPO_DIR/omarchy/plugins/reloadedhead.nimbus/manifest.json" "$REPO_DIR/omarchy/plugins/reloadedhead.nimbus/Panel.qml" "$PLUGIN_DIR/"
+echo "installed bar-widget plugin to $PLUGIN_DIR"
 
-python3 - "$MENU_FILE" "$REPO_DIR/omarchy/menu-entry.jsonc" <<'PYEOF'
-import sys
+if [ ! -f "$UDEV_RULE" ] || ! diff -q "$REPO_DIR/udev/99-nimbus.rules" "$UDEV_RULE" >/dev/null 2>&1; then
+    sudo install -m 0644 "$REPO_DIR/udev/99-nimbus.rules" "$UDEV_RULE"
+    sudo udevadm control --reload-rules
+    sudo usermod -aG input "$USER"
+    echo "installed $UDEV_RULE and added $USER to the input group"
+    echo "log out and back in for the group change to take effect"
+else
+    echo "udev rule already up to date"
+fi
 
-menu_path, entry_path = sys.argv[1], sys.argv[2]
-
-with open(entry_path, encoding="utf-8") as f:
-    entry = f.read().rstrip("\n")
-
-with open(menu_path, encoding="utf-8") as f:
-    content = f.read()
-
-if not content.strip():
-    content = "{\n}\n"
-
-if '"nimbus":' in content:
-    print("menu entry already present, skipping")
-else:
-    idx = content.rstrip().rfind("}")
-    content = content[:idx] + "\n" + entry + "\n" + content[idx:]
-    with open(menu_path, "w", encoding="utf-8") as f:
-        f.write(content)
-    print(f"added Nimbus entry to {menu_path}")
-PYEOF
-
-echo "done. Find it in the Omarchy menu under 'Nimbus Gamepad'."
+echo "done. Add 'Nimbus Gamepad' to the bar with: omarchy bar put reloadedhead.nimbus"

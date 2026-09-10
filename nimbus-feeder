@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
-"""Reads raw Nimbus HID reports over hidraw, feeds a virtual Xbox 360 gamepad via uinput."""
-import ctypes, fcntl, os, struct, sys, time
+"""Reads raw Nimbus HID reports over hidraw, feeds a virtual Xbox 360 gamepad via uinput.
+
+Runs forever: waits for the controller, bridges it while connected, waits
+again after it disconnects. Prints "WAITING" / "ACTIVE" on each transition
+so a caller (bar widget, systemd, whatever) can follow along on stdout.
+"""
+import ctypes, fcntl, os, signal, struct, sys, time
 
 UI_DEV_CREATE = 0x5501
 UI_DEV_DESTROY = 0x5502
@@ -110,15 +115,18 @@ def find_hidraw():
     return None
 
 
-def main():
-    path = find_hidraw()
-    if not path:
-        print("Nimbus not found over Bluetooth. Pair/connect it first.", file=sys.stderr)
-        sys.exit(1)
-    print(f"Nimbus found at {path}")
+class Stop(Exception):
+    pass
 
+
+def _raise_stop(signum, frame):
+    raise Stop()
+
+
+def bridge_once(path):
+    """Bridge one connection. Returns when the controller disconnects."""
     ui = create_uinput()
-    print("Virtual Xbox 360 controller created. Ctrl+C to stop.")
+    print("ACTIVE", flush=True)
 
     prev_btn = {}
     hid_fd = os.open(path, os.O_RDONLY)
@@ -126,6 +134,8 @@ def main():
         while True:
             data = os.read(hid_fd, 32)
             if len(data) < 17:
+                if not data:
+                    return  # disconnected
                 continue
             b = data
 
@@ -161,20 +171,27 @@ def main():
             emit(ui, EV_ABS, ABS_RZ, rt)
 
             syn(ui)
-
-            print(f"\rA:{face_a>=BTN_THRESHOLD:d} B:{face_b>=BTN_THRESHOLD:d} "
-                  f"X:{face_x>=BTN_THRESHOLD:d} Y:{face_y>=BTN_THRESHOLD:d} "
-                  f"LB:{lb>=BTN_THRESHOLD:d} RB:{rb>=BTN_THRESHOLD:d} "
-                  f"LT:{lt:3d} RT:{rt:3d} St:{start>=BTN_THRESHOLD:d} "
-                  f"Dpad:({hat_x:+d},{hat_y:+d}) "
-                  f"L:({lx:+4d},{ly:+4d}) R:({rx:+4d},{ry:+4d})  ",
-                  end="", flush=True)
-    except (KeyboardInterrupt, OSError):
-        print()
+    except OSError:
+        return  # disconnected
     finally:
         os.close(hid_fd)
         fcntl.ioctl(ui, UI_DEV_DESTROY)
         os.close(ui)
+        print("WAITING", flush=True)
+
+
+def main():
+    signal.signal(signal.SIGTERM, _raise_stop)
+    print("WAITING", flush=True)
+    try:
+        while True:
+            path = find_hidraw()
+            if path:
+                bridge_once(path)
+            else:
+                time.sleep(1)
+    except (Stop, KeyboardInterrupt):
+        pass
 
 
 if __name__ == "__main__":
