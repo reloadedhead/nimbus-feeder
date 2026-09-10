@@ -6,12 +6,12 @@ PLUGIN_DIR="$HOME/.config/omarchy/plugins/reloadedhead.nimbus"
 UDEV_RULE="/etc/udev/rules.d/99-nimbus.rules"
 
 mkdir -p "$HOME/.local/bin"
-cp "$REPO_DIR/nimbus-feeder" "$HOME/.local/bin/nimbus-feeder"
+cp "$REPO_DIR/bin/nimbus-feeder" "$HOME/.local/bin/nimbus-feeder"
 chmod +x "$HOME/.local/bin/nimbus-feeder"
 echo "installed ~/.local/bin/nimbus-feeder"
 
 mkdir -p "$PLUGIN_DIR"
-cp "$REPO_DIR/omarchy/plugins/reloadedhead.nimbus/manifest.json" "$REPO_DIR/omarchy/plugins/reloadedhead.nimbus/Panel.qml" "$PLUGIN_DIR/"
+cp "$REPO_DIR/manifest.json" "$REPO_DIR/Panel.qml" "$PLUGIN_DIR/"
 echo "installed bar-widget plugin to $PLUGIN_DIR"
 
 if [ ! -f "$UDEV_RULE" ] || ! diff -q "$REPO_DIR/udev/99-nimbus.rules" "$UDEV_RULE" >/dev/null 2>&1; then

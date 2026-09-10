@@ -50,7 +50,7 @@ session's group membership only refreshes on a fresh login.
 Not on Omarchy? Just:
 
 ```
-cp nimbus-feeder ~/.local/bin/
+cp bin/nimbus-feeder ~/.local/bin/
 chmod +x ~/.local/bin/nimbus-feeder
 ```
 
