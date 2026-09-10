@@ -1,0 +1,6 @@
+  "nimbus": {
+    "icon": "󰊗",
+    "label": "Nimbus Gamepad Feeder",
+    "description": "Feeds a Steelseries Nimbus Controller (MFi) as an Xbox 360 Controller",
+    "action": "omarchy-launch-or-focus-tui --app-id=nimbus-gamepad \"sudo nimbus-feeder\""
+  },

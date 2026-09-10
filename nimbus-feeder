@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+"""Reads raw Nimbus HID reports over hidraw, feeds a virtual Xbox 360 gamepad via uinput."""
+import ctypes, fcntl, os, struct, sys, time
+
+UI_DEV_CREATE = 0x5501
+UI_DEV_DESTROY = 0x5502
+UI_SET_EVBIT = 0x40045564
+UI_SET_KEYBIT = 0x40045565
+UI_SET_ABSBIT = 0x40045567
+
+EV_SYN, EV_KEY, EV_ABS = 0, 1, 3
+
+BTN_SOUTH, BTN_EAST, BTN_NORTH, BTN_WEST = 0x130, 0x131, 0x133, 0x134
+BTN_TL, BTN_TR = 0x136, 0x137
+BTN_SELECT, BTN_START, BTN_MODE = 0x13a, 0x13b, 0x13c
+BTN_THUMBL, BTN_THUMBR = 0x13d, 0x13e
+
+ABS_X, ABS_Y, ABS_Z, ABS_RX, ABS_RY, ABS_RZ = 0, 1, 2, 3, 4, 5
+ABS_HAT0X, ABS_HAT0Y = 16, 17
+
+
+class input_id(ctypes.Structure):
+    _fields_ = [("bustype", ctypes.c_uint16), ("vendor", ctypes.c_uint16),
+                ("product", ctypes.c_uint16), ("version", ctypes.c_uint16)]
+
+
+class uinput_setup(ctypes.Structure):
+    _fields_ = [("id", input_id), ("name", ctypes.c_char * 80),
+                ("ff_effects_max", ctypes.c_uint32)]
+
+
+class input_absinfo(ctypes.Structure):
+    _fields_ = [("value", ctypes.c_int32), ("minimum", ctypes.c_int32),
+                ("maximum", ctypes.c_int32), ("fuzz", ctypes.c_int32),
+                ("flat", ctypes.c_int32), ("resolution", ctypes.c_int32)]
+
+
+class uinput_abs_setup(ctypes.Structure):
+    _fields_ = [("code", ctypes.c_uint16), ("absinfo", input_absinfo)]
+
+
+def _ioc(direction, type_, nr, size):
+    return (direction << 30) | (ord(type_) << 8) | nr | (size << 16)
+
+
+UI_DEV_SETUP = _ioc(1, 'U', 3, ctypes.sizeof(uinput_setup))
+UI_ABS_SETUP = _ioc(1, 'U', 4, ctypes.sizeof(uinput_abs_setup))
+
+BUTTONS = [BTN_SOUTH, BTN_EAST, BTN_NORTH, BTN_WEST, BTN_TL, BTN_TR,
+           BTN_SELECT, BTN_START, BTN_MODE, BTN_THUMBL, BTN_THUMBR]
+AXES = [(ABS_X, -32768, 32767), (ABS_Y, -32768, 32767),
+        (ABS_RX, -32768, 32767), (ABS_RY, -32768, 32767),
+        (ABS_Z, 0, 255), (ABS_RZ, 0, 255),
+        (ABS_HAT0X, -1, 1), (ABS_HAT0Y, -1, 1)]
+
+
+def create_uinput():
+    fd = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
+    fcntl.ioctl(fd, UI_SET_EVBIT, EV_KEY)
+    for b in BUTTONS:
+        fcntl.ioctl(fd, UI_SET_KEYBIT, b)
+    fcntl.ioctl(fd, UI_SET_EVBIT, EV_ABS)
+    for code, _, _ in AXES:
+        fcntl.ioctl(fd, UI_SET_ABSBIT, code)
+
+    setup = uinput_setup()
+    setup.id.bustype = 0x03  # BUS_USB
+    setup.id.vendor = 0x045e  # Microsoft
+    setup.id.product = 0x028e  # Xbox 360 Controller
+    setup.id.version = 1
+    setup.name = b"Xbox 360 Controller"
+    fcntl.ioctl(fd, UI_DEV_SETUP, bytes(setup))
+
+    for code, mn, mx in AXES:
+        a = uinput_abs_setup()
+        a.code = code
+        a.absinfo.minimum = mn
+        a.absinfo.maximum = mx
+        fcntl.ioctl(fd, UI_ABS_SETUP, bytes(a))
+
+    fcntl.ioctl(fd, UI_DEV_CREATE)
+    return fd
+
+
+_EVENT_FMT = "llHHi"
+
+
+def emit(fd, etype, code, value):
+    t = time.time()
+    sec, usec = int(t), int((t % 1) * 1_000_000)
+    os.write(fd, struct.pack(_EVENT_FMT, sec, usec, etype, code, value))
+
+
+def syn(fd):
+    emit(fd, EV_SYN, 0, 0)
+
+
+BTN_THRESHOLD = 30
+
+
+def s8(b):
+    return b - 256 if b > 127 else b
+
+
+def find_hidraw():
+    for entry in os.listdir("/sys/class/hidraw"):
+        target = os.path.realpath(f"/sys/class/hidraw/{entry}/device")
+        if "0111:1420" in target:
+            return f"/dev/{entry}"
+    return None
+
+
+def main():
+    path = find_hidraw()
+    if not path:
+        print("Nimbus not found over Bluetooth. Pair/connect it first.", file=sys.stderr)
+        sys.exit(1)
+    print(f"Nimbus found at {path}")
+
+    ui = create_uinput()
+    print("Virtual Xbox 360 controller created. Ctrl+C to stop.")
+
+    prev_btn = {}
+    hid_fd = os.open(path, os.O_RDONLY)
+    try:
+        while True:
+            data = os.read(hid_fd, 32)
+            if len(data) < 17:
+                continue
+            b = data
+
+            dpad_up, dpad_right, dpad_down, dpad_left = b[0], b[1], b[2], b[3]
+            face_a, face_b, face_x, face_y = b[4], b[5], b[6], b[7]
+            lb, rb, lt, rt, start = b[8], b[9], b[10], b[11], b[12]
+            lx, ly, rx, ry = s8(b[13]), s8(b[14]), s8(b[15]), s8(b[16])
+
+            def digital(code, raw):
+                pressed = 1 if raw >= BTN_THRESHOLD else 0
+                if prev_btn.get(code) != pressed:
+                    emit(ui, EV_KEY, code, pressed)
+                    prev_btn[code] = pressed
+
+            digital(BTN_SOUTH, face_a)
+            digital(BTN_EAST, face_b)
+            digital(BTN_NORTH, face_x)
+            digital(BTN_WEST, face_y)
+            digital(BTN_TL, lb)
+            digital(BTN_TR, rb)
+            digital(BTN_START, start)
+
+            hat_x = (1 if dpad_right >= BTN_THRESHOLD else 0) - (1 if dpad_left >= BTN_THRESHOLD else 0)
+            hat_y = (1 if dpad_down >= BTN_THRESHOLD else 0) - (1 if dpad_up >= BTN_THRESHOLD else 0)
+            emit(ui, EV_ABS, ABS_HAT0X, hat_x)
+            emit(ui, EV_ABS, ABS_HAT0Y, hat_y)
+
+            emit(ui, EV_ABS, ABS_X, lx * 256)
+            emit(ui, EV_ABS, ABS_Y, -ly * 256)
+            emit(ui, EV_ABS, ABS_RX, rx * 256)
+            emit(ui, EV_ABS, ABS_RY, -ry * 256)
+            emit(ui, EV_ABS, ABS_Z, lt)
+            emit(ui, EV_ABS, ABS_RZ, rt)
+
+            syn(ui)
+
+            print(f"\rA:{face_a>=BTN_THRESHOLD:d} B:{face_b>=BTN_THRESHOLD:d} "
+                  f"X:{face_x>=BTN_THRESHOLD:d} Y:{face_y>=BTN_THRESHOLD:d} "
+                  f"LB:{lb>=BTN_THRESHOLD:d} RB:{rb>=BTN_THRESHOLD:d} "
+                  f"LT:{lt:3d} RT:{rt:3d} St:{start>=BTN_THRESHOLD:d} "
+                  f"Dpad:({hat_x:+d},{hat_y:+d}) "
+                  f"L:({lx:+4d},{ly:+4d}) R:({rx:+4d},{ry:+4d})  ",
+                  end="", flush=True)
+    except (KeyboardInterrupt, OSError):
+        print()
+    finally:
+        os.close(hid_fd)
+        fcntl.ioctl(ui, UI_DEV_DESTROY)
+        os.close(ui)
+
+
+if __name__ == "__main__":
+    main()
